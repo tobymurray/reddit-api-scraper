@@ -1,13 +1,16 @@
 use reqwest;
 use scraper::{Html, Selector};
-use std::fs::File;
+use std::fs;
 use std::io::prelude::*;
+use std::path::Path;
 
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
 const API_SECTION_API_SELECTOR_STRING: &str =
   concat!("div.toc > ul > li > ul > li", " > ul > li > a");
 
 pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
+  fs::create_dir_all("target/output")?;
+
   let resp = reqwest::get("https://www.reddit.com/dev/api")
     .await?
     .text()
@@ -36,29 +39,60 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
       .unwrap()
       .text()
       .collect::<Vec<_>>()[0];
-    if i > 1 {
-      continue;
-    }
-    println!("Section {}: {}", i, api_section_header);
-    create_file(api_section_header).await?;
 
-    // println!("Going to use selector: {}", &(API_SECTION_CONTAINER_SELECTOR_STRING.to_string() + "> [href$='#section_" + api_section_header + "']"));
+    println!("Section {}: {}", i, api_section_header);
+
+    let filename = str::replace(api_section_header, "&", "and");
+    let filename = str::replace(&filename, " ", "_");
+    let mut file = create_file(&filename).await?;
 
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
     for (j, api_section) in element.select(&api_section_api_selector).enumerate() {
-      // if j == 0 {
-      let api = api_section.value();
+      let api = api_section.text().collect::<Vec<_>>()[0];
       println!("    {}: {:#?}", j, api);
-      // }
+
+      file.write_all(b"// API is: '")?;
+      file.write_all(api.as_bytes())?;
+      file.write_all(b"'\n")?;
+
+      let api_without_leading_slash = match api.chars().next().unwrap() {
+        '/' => &api[1..],
+        _ => &api,
+      };
+
+      let last_character = api_without_leading_slash
+        .chars()
+        .rev()
+        .next()
+        .unwrap_or_default();
+
+      let api_without_leading_or_trailing_slash = match last_character {
+        '/' => &api_without_leading_slash[..api_without_leading_slash.len() - 1],
+        _ => &api_without_leading_slash,
+      };
+
+      file.write_all(b"pub fn ")?;
+
+      let api_method_name = str::replace(api_without_leading_or_trailing_slash, "/", "_");
+      file.write_all(api_method_name.as_bytes())?;
+      file.write_all(b"() {\n")?;
+      file.write_all(b"  println!(\"")?;
+      file.write_all(api.as_bytes())?;
+      file.write_all(b"\");\n")?;
+      file.write_all(b"}\n")?;
+
+      file.write_all(b"\n")?;
     }
   }
 
   Ok(())
 }
 
-async fn create_file(filename: &str) -> std::io::Result<()> {
-  let mut file = File::create(filename)?;
-  file.write_all(b"Hello, world!")?;
-  Ok(())
+async fn create_file(filename: &str) -> std::io::Result<fs::File> {
+  let path = &("./target/output/".to_string() + filename + ".rs");
+  let path = Path::new(path);
+  println!("    Creating in path {}", path.display());
+  let file = fs::File::create(path)?;
+  Ok(file)
 }
