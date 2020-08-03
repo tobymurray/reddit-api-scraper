@@ -59,10 +59,7 @@ async fn create_file(filename: &str) -> std::io::Result<fs::File> {
 }
 
 fn strip_leading_and_trailing_slashes(api: &str) -> &str {
-  let api_without_leading_slash = match api.chars().next().unwrap() {
-    '/' => &api[1..],
-    _ => &api,
-  };
+  let api_without_leading_slash = strip_leading_character(api, '/');
 
   let last_character = api_without_leading_slash.chars().rev().next().unwrap_or_default();
 
@@ -72,6 +69,16 @@ fn strip_leading_and_trailing_slashes(api: &str) -> &str {
   };
 
   api_without_leading_or_trailing_slash
+}
+
+fn strip_leading_character(string: &str, character: char) -> &str {
+  let first_character = string.chars().next().unwrap();
+
+  return if first_character == character {
+    &string[1..]
+  } else {
+    string
+  };
 }
 
 fn write_api(api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
