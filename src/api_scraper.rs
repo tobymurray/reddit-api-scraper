@@ -5,30 +5,22 @@ use std::io::prelude::*;
 use std::path::Path;
 
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
-const API_SECTION_API_SELECTOR_STRING: &str =
-  concat!("div.toc > ul > li > ul > li", " > ul > li > a");
+const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > li", " > ul > li > a");
 
 pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
   fs::create_dir_all("target/output")?;
 
-  let resp = reqwest::get("https://www.reddit.com/dev/api")
-    .await?
-    .text()
-    .await?;
+  let resp = reqwest::get("https://www.reddit.com/dev/api").await?.text().await?;
 
   let document = Html::parse_document(&resp);
 
   let div_sidebar_selector = Selector::parse("div.content div.sidebar").unwrap();
   let div_sidebar = document.select(&div_sidebar_selector).next().unwrap();
 
-  let api_section_container_selector =
-    Selector::parse(API_SECTION_CONTAINER_SELECTOR_STRING).unwrap();
+  let api_section_container_selector = Selector::parse(API_SECTION_CONTAINER_SELECTOR_STRING).unwrap();
   let api_section_container = div_sidebar.select(&api_section_container_selector);
 
-  println!(
-    "Number of elements found: {}",
-    api_section_container.clone().count()
-  );
+  println!("Number of elements found: {}", api_section_container.clone().count());
 
   let api_section_header_selector = Selector::parse("a").unwrap();
 
@@ -89,11 +81,7 @@ fn strip_leading_and_trailing_slashes(api: &str) -> &str {
     _ => &api,
   };
 
-  let last_character = api_without_leading_slash
-    .chars()
-    .rev()
-    .next()
-    .unwrap_or_default();
+  let last_character = api_without_leading_slash.chars().rev().next().unwrap_or_default();
 
   let api_without_leading_or_trailing_slash = match last_character {
     '/' => &api_without_leading_slash[..api_without_leading_slash.len() - 1],
