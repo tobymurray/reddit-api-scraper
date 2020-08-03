@@ -56,21 +56,7 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
       file.write_all(api.as_bytes())?;
       file.write_all(b"'\n")?;
 
-      let api_without_leading_slash = match api.chars().next().unwrap() {
-        '/' => &api[1..],
-        _ => &api,
-      };
-
-      let last_character = api_without_leading_slash
-        .chars()
-        .rev()
-        .next()
-        .unwrap_or_default();
-
-      let api_without_leading_or_trailing_slash = match last_character {
-        '/' => &api_without_leading_slash[..api_without_leading_slash.len() - 1],
-        _ => &api_without_leading_slash,
-      };
+      let api_without_leading_or_trailing_slash = strip_leading_and_trailing_slashes(api);
 
       file.write_all(b"pub fn ")?;
 
@@ -95,4 +81,24 @@ async fn create_file(filename: &str) -> std::io::Result<fs::File> {
   println!("    Creating in path {}", path.display());
   let file = fs::File::create(path)?;
   Ok(file)
+}
+
+fn strip_leading_and_trailing_slashes(api: &str) -> &str {
+  let api_without_leading_slash = match api.chars().next().unwrap() {
+    '/' => &api[1..],
+    _ => &api,
+  };
+
+  let last_character = api_without_leading_slash
+    .chars()
+    .rev()
+    .next()
+    .unwrap_or_default();
+
+  let api_without_leading_or_trailing_slash = match last_character {
+    '/' => &api_without_leading_slash[..api_without_leading_slash.len() - 1],
+    _ => &api_without_leading_slash,
+  };
+
+  api_without_leading_or_trailing_slash
 }
