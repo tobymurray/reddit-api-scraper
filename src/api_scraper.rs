@@ -87,9 +87,8 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
       let http_verb = strip_leading_character(word_before_underscore(href_to_api), '#');
       let http_verb = HttpVerb::from(http_verb);
 
-      println!("HTML: {:?}", http_verb);
-      println!("    {}: {:#?}", j, api);
-      write_api(&api, &file)?;
+      println!("    {:>3}: {} - {:#?}", j, http_verb, api);
+      write_api(http_verb, &api, &file)?;
     }
   }
 
@@ -99,7 +98,6 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
 async fn create_file(filename: &str) -> std::io::Result<fs::File> {
   let path = &("./target/output/".to_string() + filename + ".rs");
   let path = Path::new(path);
-  println!("    Creating in path {}", path.display());
   let file = fs::File::create(path)?;
   Ok(file)
 }
@@ -127,7 +125,7 @@ fn strip_leading_character(string: &str, character: char) -> &str {
   };
 }
 
-fn write_api(api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
+fn write_api(http_verb: HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
   file.write_all(b"// API is: '")?;
   file.write_all(api.as_bytes())?;
   file.write_all(b"'\n")?;
@@ -137,6 +135,7 @@ fn write_api(api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::E
   file.write_all(b"pub fn ")?;
 
   let api_method_name = str::replace(api_without_leading_or_trailing_slash, "/", "_");
+  file.write_all((http_verb.to_string().to_lowercase() + "_").as_bytes())?;
   file.write_all(api_method_name.as_bytes())?;
   file.write_all(b"() {\n")?;
   file.write_all(b"  println!(\"")?;
