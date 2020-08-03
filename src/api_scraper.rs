@@ -36,31 +36,14 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
 
     let filename = str::replace(api_section_header, "&", "and");
     let filename = str::replace(&filename, " ", "_");
-    let mut file = create_file(&filename).await?;
+    let file = create_file(&filename).await?;
 
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
     for (j, api_section) in element.select(&api_section_api_selector).enumerate() {
       let api = api_section.text().collect::<Vec<_>>()[0];
       println!("    {}: {:#?}", j, api);
-
-      file.write_all(b"// API is: '")?;
-      file.write_all(api.as_bytes())?;
-      file.write_all(b"'\n")?;
-
-      let api_without_leading_or_trailing_slash = strip_leading_and_trailing_slashes(api);
-
-      file.write_all(b"pub fn ")?;
-
-      let api_method_name = str::replace(api_without_leading_or_trailing_slash, "/", "_");
-      file.write_all(api_method_name.as_bytes())?;
-      file.write_all(b"() {\n")?;
-      file.write_all(b"  println!(\"")?;
-      file.write_all(api.as_bytes())?;
-      file.write_all(b"\");\n")?;
-      file.write_all(b"}\n")?;
-
-      file.write_all(b"\n")?;
+      write_api(api, &file)?;
     }
   }
 
@@ -89,4 +72,26 @@ fn strip_leading_and_trailing_slashes(api: &str) -> &str {
   };
 
   api_without_leading_or_trailing_slash
+}
+
+fn write_api(api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
+  file.write_all(b"// API is: '")?;
+  file.write_all(api.as_bytes())?;
+  file.write_all(b"'\n")?;
+
+  let api_without_leading_or_trailing_slash = strip_leading_and_trailing_slashes(api);
+
+  file.write_all(b"pub fn ")?;
+
+  let api_method_name = str::replace(api_without_leading_or_trailing_slash, "/", "_");
+  file.write_all(api_method_name.as_bytes())?;
+  file.write_all(b"() {\n")?;
+  file.write_all(b"  println!(\"")?;
+  file.write_all(api.as_bytes())?;
+  file.write_all(b"\");\n")?;
+  file.write_all(b"}\n")?;
+
+  file.write_all(b"\n")?;
+
+  Ok(())
 }
