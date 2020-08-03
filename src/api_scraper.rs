@@ -41,9 +41,9 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
     for (j, api_section) in element.select(&api_section_api_selector).enumerate() {
-      let api = api_section.text().collect::<Vec<_>>()[0];
+      let api = api_section.text().collect::<Vec<_>>().concat();
       println!("    {}: {:#?}", j, api);
-      write_api(api, &file)?;
+      write_api(&api, &file)?;
     }
   }
 
