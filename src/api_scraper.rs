@@ -134,7 +134,7 @@ fn strip_leading_character(string: &str, character: char) -> &str {
 
 fn write_api(http_verb: HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
   let api_method_name = str::replace(strip_leading_and_trailing_slashes(api), "/", "_");
-  file.write_all(("// API is: '".to_string() + api + "\n").as_bytes())?;
+  file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
 
   file.write_all(b"pub async fn ")?;
   file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
@@ -142,12 +142,12 @@ fn write_api(http_verb: HttpVerb, api: &str, mut file: &fs::File) -> Result<(), 
   file.write_all(b"(\n")?;
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
-  file.write_all(b"  refresh_token: &str,\n")?;
+  file.write_all(b"  refresh_token: String,\n")?;
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
 
   file.write_all(b"  client\n")?;
   file.write_all(("    .get(\"https://oauth.reddit.com".to_string() + api + "\")\n").as_bytes())?;
-  file.write_all(b"    .bearer_auth(refresh_token)\n")?;
+  file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
   file.write_all(b"    .send()\n")?;
   file.write_all(b"    .await\n")?;
 
