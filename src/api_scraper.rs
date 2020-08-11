@@ -45,7 +45,8 @@ impl fmt::Display for HttpVerb {
 }
 
 pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
-  fs::create_dir_all("target/output")?;
+  fs::create_dir_all("target/output/execution")?;
+  fs::create_dir_all("target/output/wrapper")?;
 
   let resp = reqwest::get("https://www.reddit.com/dev/api").await?.text().await?;
 
@@ -73,7 +74,8 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
 
     let filename = str::replace(api_section_header, "&", "and");
     let filename = str::replace(&filename, " ", "_");
-    let file = create_file(&filename).await?;
+    let execution_file = create_execution_file(&filename).await?;
+    let wrapper_file = create_wrapper_file(&filename).await?;
 
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
@@ -90,7 +92,8 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
       println!("    {:>3}: {} - {:#?}", j, http_verb, api);
       match http_verb {
         HttpVerb::GET => {
-          write_api(http_verb, &api, &file)?;
+          write_api(&http_verb, &api, &execution_file)?;
+          write_wrapper(&http_verb, &api, &api_section_header, &wrapper_file)?;
         }
         _ => {
           println!("        Support for {} not yet implemented", http_verb);
@@ -102,8 +105,15 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
-async fn create_file(filename: &str) -> std::io::Result<fs::File> {
-  let path = &("./target/output/".to_string() + filename + ".rs");
+async fn create_execution_file(filename: &str) -> std::io::Result<fs::File> {
+  let path = &("./target/output/execution/".to_string() + filename + ".rs");
+  let path = Path::new(path);
+  let file = fs::File::create(path)?;
+  Ok(file)
+}
+
+async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
+  let path = &("./target/output/wrapper/".to_string() + filename + ".rs");
   let path = Path::new(path);
   let file = fs::File::create(path)?;
   Ok(file)
@@ -132,7 +142,7 @@ fn strip_leading_character(string: &str, character: char) -> &str {
   };
 }
 
-fn write_api(http_verb: HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
+fn write_api(http_verb: &HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
   let api_method_name = str::replace(strip_leading_and_trailing_slashes(api), "/", "_");
   file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
 
@@ -150,6 +160,42 @@ fn write_api(http_verb: HttpVerb, api: &str, mut file: &fs::File) -> Result<(), 
   file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
   file.write_all(b"    .send()\n")?;
   file.write_all(b"    .await\n")?;
+
+  file.write_all(b"}\n")?;
+  file.write_all(b"\n")?;
+
+  Ok(())
+}
+
+fn write_wrapper(
+  http_verb: &HttpVerb,
+  api: &str,
+  api_section: &str,
+  mut file: &fs::File,
+) -> Result<(), Box<dyn std::error::Error>> {
+  let api_method_name = str::replace(strip_leading_and_trailing_slashes(api), "/", "_");
+  file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
+
+  file.write_all(b"pub async fn ")?;
+  file.write_all(("wrapper_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
+  file.write_all(api_method_name.as_bytes())?;
+  file.write_all(b"(\n")?;
+
+  file.write_all(b"  client: &reqwest::Client,\n")?;
+  file.write_all(b"  client_configuration: &models::ClientConfiguration,\n")?;
+  file.write_all(b"  refresh_token: &mut String,\n")?;
+  file.write_all(b") -> Result<serde_json::Value, reqwest::Error> {\n")?;
+
+  file.write_all(b"  utils::execute_with_refresh(\n")?;
+  file.write_all(b"    &client,\n")?;
+  file.write_all(b"    client_configuration,\n")?;
+  file.write_all(b"    refresh_token,\n")?;
+  file.write_all(("    ".to_string() + api_section + "::").as_bytes())?;
+  file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
+  file.write_all(api_method_name.as_bytes())?;
+  file.write_all(b",\n")?;
+  file.write_all(b"  )\n")?;
+  file.write_all(b"  .await\n")?;
 
   file.write_all(b"}\n")?;
   file.write_all(b"\n")?;
