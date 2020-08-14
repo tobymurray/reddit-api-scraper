@@ -1,4 +1,5 @@
 mod api_scraper;
+mod http_verb;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

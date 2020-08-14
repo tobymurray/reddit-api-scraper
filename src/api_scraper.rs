@@ -1,48 +1,12 @@
 use reqwest;
 use scraper::{Html, Selector};
-use std::fmt;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
+use crate::http_verb::HttpVerb;
 
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
 const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > li", " > ul > li > a");
-
-#[derive(Debug)]
-enum HttpVerb {
-  GET,
-  HEAD,
-  POST,
-  PUT,
-  DELETE,
-  TRACE,
-  OPTIONS,
-  CONNECT,
-  PATCH,
-}
-
-impl HttpVerb {
-  fn from(string: &str) -> HttpVerb {
-    match string {
-      "GET" => HttpVerb::GET,
-      "HEAD" => HttpVerb::HEAD,
-      "POST" => HttpVerb::POST,
-      "PUT" => HttpVerb::PUT,
-      "DELETE" => HttpVerb::DELETE,
-      "TRACE" => HttpVerb::TRACE,
-      "OPTIONS" => HttpVerb::OPTIONS,
-      "CONNECT" => HttpVerb::CONNECT,
-      "PATCH" => HttpVerb::PATCH,
-      _ => panic!("No match for {}", string),
-    }
-  }
-}
-
-impl fmt::Display for HttpVerb {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{:?}", self)
-  }
-}
 
 pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
   fs::create_dir_all("target/output/execution")?;
