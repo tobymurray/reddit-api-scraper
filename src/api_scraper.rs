@@ -1,14 +1,15 @@
+use crate::http_verb::HttpVerb;
 use reqwest;
+use scraper::element_ref::ElementRef;
 use scraper::{Html, Selector};
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
-use crate::http_verb::HttpVerb;
 
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
 const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > li", " > ul > li > a");
 
-pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn scrape() -> Result<(), Box<dyn std::error::Error>> {
   fs::create_dir_all("target/output/execution")?;
   fs::create_dir_all("target/output/wrapper")?;
 
@@ -50,10 +51,27 @@ pub async fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
 
       // E.g. #GET_wiki_{page}
       let href_to_api = api_section_element.attr("href").unwrap();
+
+      let escaped_href_to_api = escape_special_characters(href_to_api);
+
+      // println!("API is: {} and Escaped href: {}", api, escaped_href_to_api);
+      let api_details_selector = Selector::parse(&escaped_href_to_api).unwrap();
+      let api_details_selected = document.select(&api_details_selector);
+
+      let uris_as_strings = get_uri_from_api_details(api_details_selected);
+
       let http_verb = strip_leading_character(word_before_underscore(href_to_api), '#');
       let http_verb = HttpVerb::from(http_verb);
 
-      println!("    {:>3}: {} - {:#?}", j, http_verb, api);
+      println!("{:>6}: {:7} - {:35} {:?}", j, http_verb, api, &uris_as_strings);
+
+      if uris_as_strings.len() == 0 {
+        println!(
+          "      {} has no implementation in details, assuming it's covered elsewhere",
+          api
+        );
+      }
+
       match http_verb {
         HttpVerb::GET => {
           write_api(&http_verb, &api, &execution_file)?;
@@ -83,6 +101,73 @@ async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
   Ok(file)
 }
 
+fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
+  let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
+
+  for api_detail in api_details {
+    let uri_variants = api_detail.select(&uri_variants_selector);
+    let mut num_variants = 0;
+
+    for variant in uri_variants {
+      num_variants = num_variants + 1;
+      println!("      Variant: {:?}", variant.value());
+    }
+
+    if num_variants > 0 {
+      println!(
+        "      There {} {} URI {}, which {} supported yet",
+        if num_variants == 1 { "is" } else { "are" },
+        num_variants,
+        if num_variants == 1 { "variant" } else { "variants" },
+        if num_variants == 1 { "isn't" } else { "aren't" },
+      );
+      continue;
+    } else {
+      return match get_api_from_api_details(api_detail) {
+        Some(api) => vec![api],
+        None => Vec::new(),
+      };
+    }
+  }
+  return Vec::new();
+}
+
+fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
+  let h3_selector = Selector::parse("h3").unwrap();
+  let h3_selection = api_detail.select(&h3_selector);
+
+  let mut uri_as_string = String::new();
+  for h3 in h3_selection {
+    let mut uri_parts: Vec<String> = Vec::new();
+    for child in h3.children() {
+      match (*child.value()).as_element() {
+        Some(element) => {
+          if element.name() == "span" || element.name() == "a" {
+            continue;
+          }
+
+          uri_parts.push(ElementRef::wrap(child).unwrap().inner_html());
+        }
+        _ => {
+          uri_parts.push((*child.value()).as_text().unwrap().text.to_string());
+        }
+      }
+    }
+    for uri_part in uri_parts {
+      uri_as_string.push_str(&uri_part);
+    }
+  }
+
+  if uri_as_string.len() == 0 {
+    None
+  } else {
+    Some(uri_as_string)
+  }
+}
+
+/*
+ * Trim prefixing or suffixing slashes ('/') 
+ */
 fn strip_leading_and_trailing_slashes(api: &str) -> &str {
   let api_without_leading_slash = strip_leading_character(api, '/');
 
@@ -96,6 +181,9 @@ fn strip_leading_and_trailing_slashes(api: &str) -> &str {
   api_without_leading_or_trailing_slash
 }
 
+/*
+ * Remove the first character if it matches the provided character
+ */
 fn strip_leading_character(string: &str, character: char) -> &str {
   let first_character = string.chars().next().unwrap();
 
@@ -104,6 +192,14 @@ fn strip_leading_character(string: &str, character: char) -> &str {
   } else {
     string
   };
+}
+
+/*
+ * Some of the characters in the HTML element IDs are special characters in CSS selectors. Escape those special
+ * characters so that the CSS selector will actually work instead of blowing up.
+ */
+fn escape_special_characters(string: &str) -> String {
+  string.replace("{", "\\{").replace("}", "\\}").replace(":", "\\:")
 }
 
 fn write_api(http_verb: &HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
