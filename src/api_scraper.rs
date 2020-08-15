@@ -111,7 +111,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
     let mut variants: Vec<String> = Vec::new();
     for variant in uri_variants {
       num_variants = num_variants + 1;
-      variants.push(get_api_from_variant(variant));
+      variants.push(collect_children_as_string(variant).unwrap());
     }
 
     if num_variants > 0 {
@@ -126,15 +126,26 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
   return Vec::new();
 }
 
-fn get_api_from_variant(variant: ElementRef) -> String {
+fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
+  let h3_selector = Selector::parse("h3").unwrap();
+  let h3_selection = api_detail.select(&h3_selector);
+
+  for h3 in h3_selection {
+    // Assuming there's only one...
+    return collect_children_as_string(h3);
+  }
+
+  None
+}
+
+fn collect_children_as_string(parent: ElementRef) -> Option<String> {
   let mut uri_parts: Vec<String> = Vec::new();
-  for child in variant.children() {
+  for child in parent.children() {
     match (*child.value()).as_element() {
       Some(element) => {
         if element.name() == "span" || element.name() == "a" {
           continue;
         }
-
         uri_parts.push(ElementRef::wrap(child).unwrap().inner_html());
       }
       _ => {
@@ -142,37 +153,10 @@ fn get_api_from_variant(variant: ElementRef) -> String {
       }
     }
   }
+
   let mut uri_as_string = String::new();
   for uri_part in uri_parts {
-    uri_as_string.push_str(uri_part.trim_start_matches('→').trim());
-  }
-  uri_as_string
-}
-
-fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
-  let h3_selector = Selector::parse("h3").unwrap();
-  let h3_selection = api_detail.select(&h3_selector);
-
-  let mut uri_as_string = String::new();
-  for h3 in h3_selection {
-    let mut uri_parts: Vec<String> = Vec::new();
-    for child in h3.children() {
-      match (*child.value()).as_element() {
-        Some(element) => {
-          if element.name() == "span" || element.name() == "a" {
-            continue;
-          }
-
-          uri_parts.push(ElementRef::wrap(child).unwrap().inner_html());
-        }
-        _ => {
-          uri_parts.push((*child.value()).as_text().unwrap().text.to_string());
-        }
-      }
-    }
-    for uri_part in uri_parts {
-      uri_as_string.push_str(&uri_part);
-    }
+    uri_as_string.push_str(&uri_part);
   }
 
   if uri_as_string.len() == 0 {
