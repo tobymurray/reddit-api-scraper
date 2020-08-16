@@ -111,7 +111,13 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
     let mut variants: Vec<String> = Vec::new();
     for variant in uri_variants {
       num_variants = num_variants + 1;
-      variants.push(collect_children_as_string(variant).unwrap());
+      variants.push(
+        collect_children_as_string(variant)
+          .unwrap()
+          .trim_start_matches("→")
+          .trim()
+          .to_string(),
+      );
     }
 
     if num_variants > 0 {
