@@ -9,6 +9,16 @@ use std::path::Path;
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
 const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > li", " > ul > li > a");
 
+struct Parameter {
+  name: String,
+  token: String,
+}
+
+struct Api {
+  format_string: String,
+  parameters: Vec<Parameter>,
+}
+
 pub async fn scrape() -> Result<(), Box<dyn std::error::Error>> {
   fs::create_dir_all("target/output/execution")?;
   fs::create_dir_all("target/output/wrapper")?;
@@ -63,22 +73,25 @@ pub async fn scrape() -> Result<(), Box<dyn std::error::Error>> {
       let http_verb = word_before_underscore(href_to_api).trim_start_matches('#');
       let http_verb = HttpVerb::from(http_verb);
 
-      println!("{:>6}: {:7} - {:35} {:?}", j, http_verb, api, &uris_as_strings);
+      // println!("{:>6}: {:7} - {:35} {:?}", j, http_verb, api, &uris_as_strings);
 
       if uris_as_strings.len() == 0 {
         println!(
           "      {} has no implementation in details, assuming it's covered elsewhere",
           api
         );
+        continue;
       }
 
-      match http_verb {
-        HttpVerb::GET => {
-          write_api(&http_verb, &api, &execution_file)?;
-          write_wrapper(&http_verb, &api, &api_section_header, &wrapper_file)?;
-        }
-        _ => {
-          // println!("        Support for {} not yet implemented", http_verb);
+      for uri_as_string in uris_as_strings {
+        match http_verb {
+          HttpVerb::GET => {
+            write_api(&http_verb, &uri_as_string, &execution_file)?;
+            write_wrapper(&http_verb, &uri_as_string, &api_section_header, &wrapper_file)?;
+          }
+          _ => {
+            // println!("        Support for {} not yet implemented", http_verb);
+          }
         }
       }
     }
@@ -101,23 +114,24 @@ async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
   Ok(file)
 }
 
-fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
+fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<Api> {
   let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
 
+  // There should only be one, assume it for now
   for api_detail in api_details {
     let uri_variants = api_detail.select(&uri_variants_selector);
     let mut num_variants = 0;
 
-    let mut variants: Vec<String> = Vec::new();
+    let mut variants: Vec<Api> = Vec::new();
     for variant in uri_variants {
       num_variants = num_variants + 1;
-      variants.push(
-        collect_children_as_string(variant)
+      variants.extend(uri_prototype_into_concrete(
+        &collect_children_as_string(variant)
           .unwrap()
           .trim_start_matches("→")
           .trim()
           .to_string(),
-      );
+      ));
     }
 
     if num_variants > 0 {
@@ -125,11 +139,41 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<String> {
     }
 
     return match get_api_from_api_details(api_detail) {
-      Some(api) => vec![api],
+      Some(api) => uri_prototype_into_concrete(&api),
       None => Vec::new(),
     };
   }
   return Vec::new();
+}
+
+/*
+ * A bunch of APIs are of the form [/r/subreddit]/about/banned where the API works as written but
+ * also without the /r/subreddit prefix, so there are actually two APIS ('/about/banned' and
+ * '/r/subreddit/about/banned')
+ */
+fn uri_prototype_into_concrete(prototype: &str) -> Vec<Api> {
+  if prototype.contains("[/r/subreddit]") {
+    let uri_without_subreddit = Api {
+      format_string: prototype.replace("[/r/subreddit]", ""),
+      parameters: Vec::new(),
+    };
+    let uri_with_subreddit = Api {
+      format_string: prototype.replace("[/r/subreddit]", "/r/{subreddit}"),
+      parameters: {
+        vec![Parameter {
+          name: "subreddit".to_string(),
+          token: "subreddit".to_string(),
+        }]
+      },
+    };
+
+    vec![uri_without_subreddit, uri_with_subreddit]
+  } else {
+    vec![Api {
+      format_string: prototype.to_string(),
+      parameters: Vec::new(),
+    }]
+  }
 }
 
 fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
@@ -180,9 +224,13 @@ fn escape_special_characters(string: &str) -> String {
   string.replace("{", "\\{").replace("}", "\\}").replace(":", "\\:")
 }
 
-fn write_api(http_verb: &HttpVerb, api: &str, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
-  let api_method_name = str::replace(api.trim_start_matches('/').trim_end_matches('/'), "/", "_");
-  file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
+fn write_api(http_verb: &HttpVerb, api: &Api, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
+  let api_method_name = str::replace(
+    &api.format_string.trim_start_matches('/').trim_end_matches('/').replace("{", "").replace("}", ""),
+    "/",
+    "_",
+  );
+  file.write_all(("// API is: '".to_string() + &api.format_string + "'\n").as_bytes())?;
 
   file.write_all(b"pub async fn ")?;
   file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
@@ -191,10 +239,22 @@ fn write_api(http_verb: &HttpVerb, api: &str, mut file: &fs::File) -> Result<(),
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  refresh_token: String,\n")?;
+
+  for parameter in &api.parameters {
+    file.write_all(("  ".to_string() + &parameter.name + ": &str,\n").as_bytes())?;
+  }
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
 
   file.write_all(b"  client\n")?;
-  file.write_all(("    .get(\"https://oauth.reddit.com".to_string() + api + "\")\n").as_bytes())?;
+
+  if api.parameters.is_empty() {
+    file.write_all(("    .get(\"https://oauth.reddit.com".to_string() + &api.format_string + "\")\n").as_bytes())?;
+  } else {
+    // Ugh, this is very broken. Only supported parameter is subreddit
+    // file.write_all(("    .get(&(\"https://oauth.reddit.com/r/\".to_string() + " api.parameters")\n").as_bytes())?;
+                      // .get(&( "https://oauth.reddit.com/r/ ".to_string() +  subreddit + "/controversial"))
+  }
+
   file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
   file.write_all(b"    .send()\n")?;
   file.write_all(b"    .await\n")?;
@@ -207,12 +267,16 @@ fn write_api(http_verb: &HttpVerb, api: &str, mut file: &fs::File) -> Result<(),
 
 fn write_wrapper(
   http_verb: &HttpVerb,
-  api: &str,
+  api: &Api,
   api_section: &str,
   mut file: &fs::File,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  let api_method_name = str::replace(api.trim_start_matches('/').trim_end_matches('/'), "/", "_");
-  file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
+  let api_method_name = str::replace(
+    api.format_string.trim_start_matches('/').trim_end_matches('/'),
+    "/",
+    "_",
+  );
+  file.write_all(("// API is: '".to_string() + &api.format_string + "'\n").as_bytes())?;
 
   file.write_all(b"pub async fn ")?;
   file.write_all(("wrapper_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
@@ -222,6 +286,9 @@ fn write_wrapper(
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  client_configuration: &models::ClientConfiguration,\n")?;
   file.write_all(b"  refresh_token: &mut String,\n")?;
+  for parameter in &api.parameters {
+    file.write_all(("  ".to_string() + &parameter.name + ": String,\n").as_bytes())?;
+  }
   file.write_all(b") -> Result<serde_json::Value, reqwest::Error> {\n")?;
 
   file.write_all(b"  utils::execute_with_refresh(\n")?;
