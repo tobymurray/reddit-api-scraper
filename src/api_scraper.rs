@@ -79,7 +79,7 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
         match http_verb {
           HttpVerb::GET => {
             write_api(&http_verb, &uri, &execution_file)?;
-            write_wrapper(&http_verb, &api, &api_section_header, &wrapper_file)?;
+            write_wrapper(&http_verb, &uri, &api_section_header, &wrapper_file)?;
           }
           _ => {
             // println!("        Support for {} not yet implemented", http_verb);
@@ -206,20 +206,13 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  refresh_token: String,\n")?;
-  for parameter in &api.parameters {
-    // Add any URI parameters as method parameters
-    file.write_all(("  ".to_string() + &parameter.0 + ": &str,\n").as_bytes())?;
-  }
+  file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
 
   // We'll need handlebars or templating
   if !api.parameters.is_empty() {
     file.write_all(b"  let mut handlebars = Handlebars::new();\n")?;
     file.write_all(b"  handlebars.set_strict_mode(true);\n")?;
-    file.write_all(b"  let mut data = HashMap::new();\n")?;
-    for parameter in &api.parameters {
-      file.write_all(("  data.insert(\"".to_string() + &parameter.0 + "\", " + &parameter.0 + ");\n").as_bytes())?;
-    }
   }
 
   file.write_all(b"  client\n")?;
@@ -229,7 +222,7 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
     file.write_all(
       ("    .get(&(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\"".to_string()
         + &api.template
-        + "\", &data).unwrap()))\n")
+        + "\", &parameters).unwrap()))\n")
         .as_bytes(),
     )?;
   }
@@ -245,12 +238,21 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
 
 fn write_wrapper(
   http_verb: &HttpVerb,
-  api: &str,
+  api: &TemplateUri,
   api_section: &str,
   mut file: &fs::File,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  let api_method_name = str::replace(api.trim_start_matches('/').trim_end_matches('/'), "/", "_");
-  file.write_all(("// API is: '".to_string() + api + "'\n").as_bytes())?;
+  let api_method_name = str::replace(
+    &api
+      .template
+      .trim_start_matches('/')
+      .trim_end_matches('/')
+      .replace("{", "")
+      .replace("}", ""),
+    "/",
+    "_",
+  );
+  file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
 
   file.write_all(b"pub async fn ")?;
   file.write_all(("wrapper_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
@@ -260,12 +262,20 @@ fn write_wrapper(
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  client_configuration: &models::ClientConfiguration,\n")?;
   file.write_all(b"  refresh_token: &mut String,\n")?;
+  if !api.parameters.is_empty() {
+    file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
+  }
   file.write_all(b") -> Result<serde_json::Value, reqwest::Error> {\n")?;
 
   file.write_all(b"  utils::execute_with_refresh(\n")?;
   file.write_all(b"    &client,\n")?;
   file.write_all(b"    client_configuration,\n")?;
   file.write_all(b"    refresh_token,\n")?;
+  if api.parameters.is_empty() {
+    file.write_all(b"    &HashMap::new(),\n")?;
+  } else {
+    file.write_all(b"    parameters,\n")?;
+  }
   file.write_all(("    ".to_string() + api_section + "::").as_bytes())?;
   file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
   file.write_all(api_method_name.as_bytes())?;
