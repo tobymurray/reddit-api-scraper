@@ -1,4 +1,5 @@
 use crate::http_verb::HttpVerb;
+use regex::Regex;
 use scraper::element_ref::ElementRef;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
@@ -158,7 +159,13 @@ fn collect_children_as_string(parent: ElementRef) -> Option<String> {
         if element.name() == "span" || element.name() == "a" {
           continue;
         }
-        uri_parts.push(ElementRef::wrap(child).unwrap().inner_html());
+
+        let element_ref = ElementRef::wrap(child).unwrap();
+        if element.name() == "em" {
+          uri_parts.push("{{".to_string() + &element_ref.inner_html().to_string() + "}}");
+        } else {
+          uri_parts.push(element_ref.inner_html());
+        }
       }
       _ => {
         uri_parts.push((*child.value()).as_text().unwrap().text.to_string());
@@ -206,7 +213,11 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  refresh_token: String,\n")?;
-  file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
+  if api.parameters.is_empty() {
+    file.write_all(b"  _parameters: &HashMap<String, String>,\n")?;
+  } else {
+    file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
+  }
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
 
   // We'll need handlebars or templating
@@ -307,25 +318,43 @@ fn word_before_underscore(s: &str) -> &str {
  * '/r/subreddit/about/banned')
  */
 fn uri_prototype_into_concrete(prototype: &str) -> Vec<TemplateUri> {
-  if prototype.contains("[/r/subreddit]") {
-    let uri_without_subreddit = TemplateUri {
-      template: prototype.replace("[/r/subreddit]", ""),
-      parameters: HashMap::new(),
-    };
-    let uri_with_subreddit = TemplateUri {
-      template: prototype.replace("[/r/subreddit]", "/r/{{subreddit}}"),
-      parameters: {
-        let mut parameters = HashMap::new();
-        parameters.insert("subreddit".to_string(), "subreddit".to_string());
-        parameters
-      },
+  let uri_variant_section = Regex::new(r"\[(.*)\]").unwrap();
+  let uri_parameter = Regex::new(r"(\{\{(\w+)\}\})").unwrap();
+
+  if uri_variant_section.is_match(prototype) {
+    let uri_without_section = uri_variant_section.replace_all(prototype, "").to_string();
+
+    let mut uri_without_section_parameters = HashMap::new();
+    for parameter_match in uri_parameter.captures_iter(&uri_without_section) {
+      uri_without_section_parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
+    }
+    // Assume there's a single section for now ([/r/subreddit])
+    let uri_without_section = TemplateUri {
+      template: uri_without_section,
+      parameters: uri_without_section_parameters,
     };
 
-    vec![uri_without_subreddit, uri_with_subreddit]
+    let uri_with_section = uri_variant_section.replace_all(prototype, "$1").to_string();
+    let mut uri_with_section_parameters = HashMap::new();
+    for parameter_match in uri_parameter.captures_iter(&uri_with_section) {
+      uri_with_section_parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
+    }
+
+    let uri_with_section = TemplateUri {
+      template: uri_with_section,
+      parameters: uri_with_section_parameters,
+    };
+
+    vec![uri_without_section, uri_with_section]
   } else {
+    let mut parameters = HashMap::new();
+    for parameter_match in uri_parameter.captures_iter(prototype) {
+      parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
+    }
+
     vec![TemplateUri {
-      template: prototype.to_string(),
-      parameters: HashMap::new(),
+      template: uri_variant_section.replace_all(prototype, "$1").to_string(),
+      parameters: parameters,
     }]
   }
 }
