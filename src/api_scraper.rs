@@ -136,10 +136,38 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
     return variants;
   }
 
+  get_request_body_from_api_details(api_detail);
+
   return match get_api_from_api_details(api_detail) {
     Some(api) => uri_prototype_into_concrete(&api),
     None => Vec::new(),
   };
+}
+
+fn get_request_body_from_api_details(api_detail: ElementRef) {
+  let parameter_row_selector = Selector::parse("table.parameters > tbody > tr").unwrap();
+  let parameter_description_selector = Selector::parse("td > p").unwrap();
+  let parameter_name_selector = Selector::parse("th").unwrap();
+  let parameter_row_selection = api_detail.select(&parameter_row_selector);
+
+  for selection in parameter_row_selection {
+    let parameter_name = selection.select(&parameter_name_selector).next().unwrap();
+    let parameter_description = selection.select(&parameter_description_selector).next();
+    println!("  '{}'", parameter_name.inner_html(),);
+    println!(
+      "      {}",
+      match parameter_description {
+        Some(description) => {
+          description.inner_html()
+        }
+        None => {
+          "".to_string()
+        }
+      }
+    );
+  }
+
+  println!("\n\n");
 }
 
 fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
