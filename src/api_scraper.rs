@@ -82,8 +82,12 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
             write_api(&http_verb, &uri, &execution_file)?;
             write_wrapper(&http_verb, &uri, &api_section_header, &wrapper_file)?;
           }
+          HttpVerb::POST => {
+            write_api(&http_verb, &uri, &execution_file)?;
+            write_wrapper(&http_verb, &uri, &filename, &wrapper_file)?;
+          }
           _ => {
-            // println!("        Support for {} not yet implemented", http_verb);
+            println!("        Support for {} not yet implemented", http_verb);
           }
         }
       }
@@ -228,10 +232,19 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
 
   file.write_all(b"  client\n")?;
   if api.parameters.is_empty() {
-    file.write_all(("    .get(\"https://oauth.reddit.com".to_string() + &api.template + "\")\n").as_bytes())?;
+    file.write_all(
+      ("    .".to_string()
+        + &http_verb.to_string().to_lowercase()
+        + "(\"https://oauth.reddit.com"
+        + &api.template
+        + "\")\n")
+        .as_bytes(),
+    )?;
   } else {
     file.write_all(
-      ("    .get(&(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\"".to_string()
+      ("    .".to_string()
+        + &http_verb.to_string().to_lowercase()
+        + "(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\""
         + &api.template
         + "\", &parameters).unwrap()))\n")
         .as_bytes(),
