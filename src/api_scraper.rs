@@ -115,32 +115,31 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
   let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
 
   // There should be only one, assume it's that way for now
-  for api_detail in api_details {
-    let uri_variants = api_detail.select(&uri_variants_selector);
-    let mut num_variants = 0;
+  let api_detail = api_details.enumerate().next().unwrap().1;
 
-    let mut variants: Vec<TemplateUri> = Vec::new();
-    for variant in uri_variants {
-      num_variants = num_variants + 1;
-      variants.extend(uri_prototype_into_concrete(
-        &collect_children_as_string(variant)
-          .unwrap()
-          .trim_start_matches("→")
-          .trim()
-          .to_string(),
-      ));
-    }
+  let uri_variants = api_detail.select(&uri_variants_selector);
+  let mut num_variants = 0;
 
-    if num_variants > 0 {
-      return variants;
-    }
-
-    return match get_api_from_api_details(api_detail) {
-      Some(api) => uri_prototype_into_concrete(&api),
-      None => Vec::new(),
-    };
+  let mut variants: Vec<TemplateUri> = Vec::new();
+  for variant in uri_variants {
+    num_variants = num_variants + 1;
+    variants.extend(uri_prototype_into_concrete(
+      &collect_children_as_string(variant)
+        .unwrap()
+        .trim_start_matches("→")
+        .trim()
+        .to_string(),
+    ));
   }
-  return Vec::new();
+
+  if num_variants > 0 {
+    return variants;
+  }
+
+  return match get_api_from_api_details(api_detail) {
+    Some(api) => uri_prototype_into_concrete(&api),
+    None => Vec::new(),
+  };
 }
 
 fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
