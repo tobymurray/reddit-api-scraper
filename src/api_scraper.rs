@@ -13,11 +13,13 @@ const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > 
 struct TemplateUri {
   template: String,
   parameters: HashMap<String, String>,
+  request_fields: HashMap<String, String>,
 }
 
 pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
   fs::create_dir_all("target/output/execution")?;
   fs::create_dir_all("target/output/wrapper")?;
+  fs::create_dir_all("target/output/request_models")?;
 
   let document = Html::parse_document(html);
 
@@ -45,6 +47,7 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
     let filename = str::replace(&filename, " ", "_");
     let execution_file = create_execution_file(&filename).await?;
     let wrapper_file = create_wrapper_file(&filename).await?;
+    let request_model_file = create_request_model_file(&filename).await?;
 
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
@@ -85,6 +88,7 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
           HttpVerb::POST => {
             write_api(&http_verb, &uri, &execution_file)?;
             write_wrapper(&http_verb, &uri, &filename, &wrapper_file)?;
+            write_request_model_file(&http_verb, &uri, &request_model_file)?;
           }
           _ => {
             println!("        Support for {} not yet implemented", http_verb);
@@ -111,11 +115,24 @@ async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
   Ok(file)
 }
 
+async fn create_request_model_file(filename: &str) -> std::io::Result<fs::File> {
+  let path = &("./target/output/request_models/".to_string() + filename + ".rs");
+  let path = Path::new(path);
+  let file = fs::File::create(path)?;
+  Ok(file)
+}
+
 fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateUri> {
   let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
 
+  let api_detail = api_details.enumerate().next();
+
+  if api_detail == None {
+    return Vec::new();
+  }
+
   // There should be only one, assume it's that way for now
-  let api_detail = api_details.enumerate().next().unwrap().1;
+  let api_detail = api_detail.unwrap().1;
 
   let uri_variants = api_detail.select(&uri_variants_selector);
   let mut num_variants = 0;
@@ -129,6 +146,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
         .trim_start_matches("→")
         .trim()
         .to_string(),
+      api_detail,
     ));
   }
 
@@ -136,38 +154,32 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
     return variants;
   }
 
-  get_request_body_from_api_details(api_detail);
-
   return match get_api_from_api_details(api_detail) {
-    Some(api) => uri_prototype_into_concrete(&api),
+    Some(api) => uri_prototype_into_concrete(&api, api_detail),
     None => Vec::new(),
   };
 }
 
-fn get_request_body_from_api_details(api_detail: ElementRef) {
+fn get_request_body_from_api_details(api_detail: ElementRef) -> HashMap<String, String> {
   let parameter_row_selector = Selector::parse("table.parameters > tbody > tr").unwrap();
   let parameter_description_selector = Selector::parse("td > p").unwrap();
   let parameter_name_selector = Selector::parse("th").unwrap();
   let parameter_row_selection = api_detail.select(&parameter_row_selector);
 
+  let mut request_fields = HashMap::new();
   for selection in parameter_row_selection {
     let parameter_name = selection.select(&parameter_name_selector).next().unwrap();
     let parameter_description = selection.select(&parameter_description_selector).next();
-    println!("  '{}'", parameter_name.inner_html(),);
-    println!(
-      "      {}",
+    request_fields.insert(
+      parameter_name.inner_html(),
       match parameter_description {
-        Some(description) => {
-          description.inner_html()
-        }
-        None => {
-          "".to_string()
-        }
-      }
+        Some(description) => description.inner_html(),
+        None => "".to_string(),
+      },
     );
   }
 
-  println!("\n\n");
+  return request_fields;
 }
 
 fn get_api_from_api_details(api_detail: ElementRef) -> Option<String> {
@@ -249,6 +261,17 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
   } else {
     file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
   }
+  match http_verb {
+    HttpVerb::POST => {
+      if api.request_fields.is_empty() {
+        file.write_all(b"  _request_fields: &HashMap<String, String>,\n")?;
+      } else {
+        file.write_all(b"  request_fields: &HashMap<String, String>,\n")?;
+      }
+    }
+    _ => {}
+  }
+
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
 
   // We'll need handlebars or templating
@@ -276,6 +299,14 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
         + "\", &parameters).unwrap()))\n")
         .as_bytes(),
     )?;
+  }
+  match http_verb {
+    HttpVerb::POST => {
+      if !api.request_fields.is_empty() {
+        file.write_all(b"    .json(&request_fields)\n")?;
+      }
+    }
+    _ => {}
   }
   file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
   file.write_all(b"    .send()\n")?;
@@ -327,6 +358,7 @@ fn write_wrapper(
   } else {
     file.write_all(b"    parameters,\n")?;
   }
+  file.write_all(b"    &HashMap::new(),\n")?;
   file.write_all(("    ".to_string() + api_section + "::").as_bytes())?;
   file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
   file.write_all(api_method_name.as_bytes())?;
@@ -336,6 +368,34 @@ fn write_wrapper(
 
   file.write_all(b"}\n")?;
   file.write_all(b"\n")?;
+
+  Ok(())
+}
+
+fn write_request_model_file(
+  http_verb: &HttpVerb,
+  api: &TemplateUri,
+  mut file: &fs::File,
+) -> Result<(), Box<dyn std::error::Error>> {
+  let structure_name = &api
+    .template
+    .trim_start_matches('/')
+    .trim_end_matches('/')
+    .replace("{", "")
+    .replace("}", "")
+    .replace("/", "_")
+    .to_ascii_uppercase();
+
+  file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
+  file.write_all(("pub struct ".to_string() + structure_name + " {\n").as_bytes())?;
+  for field in api.request_fields.clone() {
+    if !field.1.is_empty() {
+      file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
+    }
+
+    file.write_all(("  ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
+  }
+  file.write_all(b"}")?;
 
   Ok(())
 }
@@ -357,9 +417,11 @@ fn word_before_underscore(s: &str) -> &str {
  * also without the /r/subreddit prefix, so there are actually two APIS ('/about/banned' and
  * '/r/subreddit/about/banned')
  */
-fn uri_prototype_into_concrete(prototype: &str) -> Vec<TemplateUri> {
+fn uri_prototype_into_concrete(prototype: &str, api_detail: ElementRef) -> Vec<TemplateUri> {
   let uri_variant_section = Regex::new(r"\[(.*)\]").unwrap();
   let uri_parameter = Regex::new(r"(\{\{(\w+)\}\})").unwrap();
+
+  let request_fields = get_request_body_from_api_details(api_detail);
 
   if uri_variant_section.is_match(prototype) {
     let uri_without_section = uri_variant_section.replace_all(prototype, "").to_string();
@@ -368,10 +430,12 @@ fn uri_prototype_into_concrete(prototype: &str) -> Vec<TemplateUri> {
     for parameter_match in uri_parameter.captures_iter(&uri_without_section) {
       uri_without_section_parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
     }
+
     // Assume there's a single section for now ([/r/subreddit])
     let uri_without_section = TemplateUri {
       template: uri_without_section,
       parameters: uri_without_section_parameters,
+      request_fields: request_fields.clone(),
     };
 
     let uri_with_section = uri_variant_section.replace_all(prototype, "$1").to_string();
@@ -383,6 +447,7 @@ fn uri_prototype_into_concrete(prototype: &str) -> Vec<TemplateUri> {
     let uri_with_section = TemplateUri {
       template: uri_with_section,
       parameters: uri_with_section_parameters,
+      request_fields: request_fields.clone(),
     };
 
     vec![uri_without_section, uri_with_section]
@@ -395,6 +460,7 @@ fn uri_prototype_into_concrete(prototype: &str) -> Vec<TemplateUri> {
     vec![TemplateUri {
       template: uri_variant_section.replace_all(prototype, "$1").to_string(),
       parameters: parameters,
+      request_fields: request_fields.clone(),
     }]
   }
 }
