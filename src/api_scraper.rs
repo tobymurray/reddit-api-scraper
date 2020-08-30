@@ -65,10 +65,10 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
       let api_details_selector = Selector::parse(&escaped_href_to_api).unwrap();
       let api_details_selected = document.select(&api_details_selector);
 
-      let uris_as_strings = get_uri_from_api_details(api_details_selected);
-
       let http_verb = word_before_underscore(href_to_api).trim_start_matches('#');
       let http_verb = HttpVerb::from(http_verb);
+
+      let uris_as_strings = get_uri_from_api_details(api_details_selected, &http_verb);
 
       // println!("{:>6}: {:7} - {:35} {:?}", j, http_verb, api, &uris_as_strings);
 
@@ -122,7 +122,7 @@ async fn create_request_model_file(filename: &str) -> std::io::Result<fs::File> 
   Ok(file)
 }
 
-fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateUri> {
+fn get_uri_from_api_details(api_details: scraper::html::Select, http_verb: &HttpVerb) -> Vec<TemplateUri> {
   let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
 
   let api_detail = api_details.enumerate().next();
@@ -137,6 +137,11 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
   let uri_variants = api_detail.select(&uri_variants_selector);
   let mut num_variants = 0;
 
+  let request_fields = match http_verb {
+    HttpVerb::POST => get_request_body_from_api_details(api_detail),
+    _ => HashMap::new(),
+  };
+
   let mut variants: Vec<TemplateUri> = Vec::new();
   for variant in uri_variants {
     num_variants = num_variants + 1;
@@ -147,6 +152,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
         .trim()
         .to_string(),
       api_detail,
+      request_fields.clone(),
     ));
   }
 
@@ -155,7 +161,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select) -> Vec<TemplateU
   }
 
   return match get_api_from_api_details(api_detail) {
-    Some(api) => uri_prototype_into_concrete(&api, api_detail),
+    Some(api) => uri_prototype_into_concrete(&api, api_detail, request_fields.clone()),
     None => Vec::new(),
   };
 }
@@ -261,15 +267,11 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
   } else {
     file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
   }
-  match http_verb {
-    HttpVerb::POST => {
-      if api.request_fields.is_empty() {
-        file.write_all(b"  _request_fields: &HashMap<String, String>,\n")?;
-      } else {
-        file.write_all(b"  request_fields: &HashMap<String, String>,\n")?;
-      }
-    }
-    _ => {}
+
+  if api.request_fields.is_empty() {
+    file.write_all(b"  _request_fields: &HashMap<String, String>,\n")?;
+  } else {
+    file.write_all(b"  request_fields: &HashMap<String, String>,\n")?;
   }
 
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
@@ -294,7 +296,7 @@ fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Re
     file.write_all(
       ("    .".to_string()
         + &http_verb.to_string().to_lowercase()
-        + "(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\""
+        + "(&(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\""
         + &api.template
         + "\", &parameters).unwrap()))\n")
         .as_bytes(),
@@ -334,6 +336,16 @@ fn write_wrapper(
     "/",
     "_",
   );
+
+  let structure_name = &api
+    .template
+    .trim_start_matches('/')
+    .trim_end_matches('/')
+    .replace("{", "")
+    .replace("}", "")
+    .replace("/", "_")
+    .to_ascii_uppercase();
+
   file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
 
   file.write_all(b"pub async fn ")?;
@@ -342,10 +354,17 @@ fn write_wrapper(
   file.write_all(b"(\n")?;
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
-  file.write_all(b"  client_configuration: &models::ClientConfiguration,\n")?;
+  file.write_all(b"  client_configuration: &client::ClientConfiguration,\n")?;
   file.write_all(b"  refresh_token: &mut String,\n")?;
   if !api.parameters.is_empty() {
+    if api.template == "/hot" {
+      println!("Parameters are: {:?}", api.parameters);
+    }
     file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
+  }
+
+  if !api.request_fields.is_empty() {
+    file.write_all(("  request_fields: ".to_string() + structure_name + ",\n").as_bytes())?
   }
   file.write_all(b") -> Result<serde_json::Value, reqwest::Error> {\n")?;
 
@@ -417,11 +436,13 @@ fn word_before_underscore(s: &str) -> &str {
  * also without the /r/subreddit prefix, so there are actually two APIS ('/about/banned' and
  * '/r/subreddit/about/banned')
  */
-fn uri_prototype_into_concrete(prototype: &str, api_detail: ElementRef) -> Vec<TemplateUri> {
+fn uri_prototype_into_concrete(
+  prototype: &str,
+  api_detail: ElementRef,
+  request_fields: HashMap<String, String>,
+) -> Vec<TemplateUri> {
   let uri_variant_section = Regex::new(r"\[(.*)\]").unwrap();
   let uri_parameter = Regex::new(r"(\{\{(\w+)\}\})").unwrap();
-
-  let request_fields = get_request_body_from_api_details(api_detail);
 
   if uri_variant_section.is_match(prototype) {
     let uri_without_section = uri_variant_section.replace_all(prototype, "").to_string();
