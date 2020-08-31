@@ -1,26 +1,16 @@
+use crate::generator;
 use crate::http_verb::HttpVerb;
+use crate::template_uri;
+
 use regex::Regex;
 use scraper::element_ref::ElementRef;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
-use std::fs;
-use std::io::prelude::*;
-use std::path::Path;
 
 const API_SECTION_CONTAINER_SELECTOR_STRING: &str = "div.toc > ul > li > ul > li";
 const API_SECTION_API_SELECTOR_STRING: &str = concat!("div.toc > ul > li > ul > li", " > ul > li > a");
 
-struct TemplateUri {
-  template: String,
-  parameters: HashMap<String, String>,
-  request_fields: HashMap<String, String>,
-}
-
 pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
-  fs::create_dir_all("target/output/execution")?;
-  fs::create_dir_all("target/output/wrapper")?;
-  fs::create_dir_all("target/output/request_models")?;
-
   let document = Html::parse_document(html);
 
   let div_sidebar_selector = Selector::parse("div.content div.sidebar").unwrap();
@@ -45,15 +35,15 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let filename = str::replace(api_section_header, "&", "and");
     let filename = str::replace(&filename, " ", "_");
-    let execution_file = create_execution_file(&filename).await?;
-    let wrapper_file = create_wrapper_file(&filename).await?;
-    let request_model_file = create_request_model_file(&filename).await?;
+
+    generator::generate().await?;
+    let execution_file = generator::create_execution_file(&filename).await?;
+    let wrapper_file = generator::create_wrapper_file(&filename).await?;
+    let request_model_file = generator::create_request_model_file(&filename).await?;
 
     let api_section_api_selector = Selector::parse(API_SECTION_API_SELECTOR_STRING).unwrap();
 
-    for (j, api_section) in element.select(&api_section_api_selector).enumerate() {
-      let api = api_section.text().collect::<Vec<_>>().concat();
-
+    for (_, api_section) in element.select(&api_section_api_selector).enumerate() {
       let api_section_element = api_section.value();
 
       // E.g. #GET_wiki_{page}
@@ -70,25 +60,16 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
 
       let uris_as_strings = get_uri_from_api_details(api_details_selected, &http_verb);
 
-      // println!("{:>6}: {:7} - {:35} {:?}", j, http_verb, api, &uris_as_strings);
-
-      if uris_as_strings.len() == 0 {
-        println!(
-          "      {} has no implementation in details, assuming it's covered elsewhere",
-          api
-        );
-      }
-
       for uri in uris_as_strings {
         match http_verb {
           HttpVerb::GET => {
-            write_api(&http_verb, &uri, &execution_file)?;
-            write_wrapper(&http_verb, &uri, &api_section_header, &wrapper_file)?;
+            generator::write_api(&http_verb, &uri, &execution_file)?;
+            generator::write_wrapper(&http_verb, &uri, &api_section_header, &wrapper_file)?;
           }
           HttpVerb::POST => {
-            write_api(&http_verb, &uri, &execution_file)?;
-            write_wrapper(&http_verb, &uri, &filename, &wrapper_file)?;
-            write_request_model_file(&http_verb, &uri, &request_model_file)?;
+            generator::write_api(&http_verb, &uri, &execution_file)?;
+            generator::write_wrapper(&http_verb, &uri, &filename, &wrapper_file)?;
+            generator::write_request_model_file(&uri, &request_model_file)?;
           }
           _ => {
             println!("        Support for {} not yet implemented", http_verb);
@@ -101,28 +82,10 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
-async fn create_execution_file(filename: &str) -> std::io::Result<fs::File> {
-  let path = &("./target/output/execution/".to_string() + filename + ".rs");
-  let path = Path::new(path);
-  let file = fs::File::create(path)?;
-  Ok(file)
-}
-
-async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
-  let path = &("./target/output/wrapper/".to_string() + filename + ".rs");
-  let path = Path::new(path);
-  let file = fs::File::create(path)?;
-  Ok(file)
-}
-
-async fn create_request_model_file(filename: &str) -> std::io::Result<fs::File> {
-  let path = &("./target/output/request_models/".to_string() + filename + ".rs");
-  let path = Path::new(path);
-  let file = fs::File::create(path)?;
-  Ok(file)
-}
-
-fn get_uri_from_api_details(api_details: scraper::html::Select, http_verb: &HttpVerb) -> Vec<TemplateUri> {
+fn get_uri_from_api_details(
+  api_details: scraper::html::Select,
+  http_verb: &HttpVerb,
+) -> Vec<template_uri::TemplateUri> {
   let uri_variants_selector = Selector::parse(".uri-variants li").unwrap();
 
   let api_detail = api_details.enumerate().next();
@@ -142,7 +105,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select, http_verb: &Http
     _ => HashMap::new(),
   };
 
-  let mut variants: Vec<TemplateUri> = Vec::new();
+  let mut variants: Vec<template_uri::TemplateUri> = Vec::new();
   for variant in uri_variants {
     num_variants = num_variants + 1;
     variants.extend(uri_prototype_into_concrete(
@@ -151,7 +114,6 @@ fn get_uri_from_api_details(api_details: scraper::html::Select, http_verb: &Http
         .trim_start_matches("→")
         .trim()
         .to_string(),
-      api_detail,
       request_fields.clone(),
     ));
   }
@@ -161,7 +123,7 @@ fn get_uri_from_api_details(api_details: scraper::html::Select, http_verb: &Http
   }
 
   return match get_api_from_api_details(api_detail) {
-    Some(api) => uri_prototype_into_concrete(&api, api_detail, request_fields.clone()),
+    Some(api) => uri_prototype_into_concrete(&api, request_fields.clone()),
     None => Vec::new(),
   };
 }
@@ -242,183 +204,6 @@ fn escape_special_characters(string: &str) -> String {
   string.replace("{", "\\{").replace("}", "\\}").replace(":", "\\:")
 }
 
-fn write_api(http_verb: &HttpVerb, api: &TemplateUri, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
-  file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
-
-  let api_method_name = str::replace(
-    &api
-      .template
-      .trim_start_matches('/')
-      .trim_end_matches('/')
-      .replace("{", "")
-      .replace("}", ""),
-    "/",
-    "_",
-  );
-  file.write_all(b"pub async fn ")?;
-  file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
-  file.write_all(api_method_name.as_bytes())?;
-  file.write_all(b"(\n")?;
-
-  file.write_all(b"  client: &reqwest::Client,\n")?;
-  file.write_all(b"  refresh_token: String,\n")?;
-  if api.parameters.is_empty() {
-    file.write_all(b"  _parameters: &HashMap<String, String>,\n")?;
-  } else {
-    file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
-  }
-
-  if api.request_fields.is_empty() {
-    file.write_all(b"  _request_fields: &HashMap<String, String>,\n")?;
-  } else {
-    file.write_all(b"  request_fields: &HashMap<String, String>,\n")?;
-  }
-
-  file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
-
-  // We'll need handlebars or templating
-  if !api.parameters.is_empty() {
-    file.write_all(b"  let mut handlebars = Handlebars::new();\n")?;
-    file.write_all(b"  handlebars.set_strict_mode(true);\n")?;
-  }
-
-  file.write_all(b"  client\n")?;
-  if api.parameters.is_empty() {
-    file.write_all(
-      ("    .".to_string()
-        + &http_verb.to_string().to_lowercase()
-        + "(\"https://oauth.reddit.com"
-        + &api.template
-        + "\")\n")
-        .as_bytes(),
-    )?;
-  } else {
-    file.write_all(
-      ("    .".to_string()
-        + &http_verb.to_string().to_lowercase()
-        + "(&(\"https://oauth.reddit.com\".to_string() + &handlebars.render_template(\""
-        + &api.template
-        + "\", &parameters).unwrap()))\n")
-        .as_bytes(),
-    )?;
-  }
-  match http_verb {
-    HttpVerb::POST => {
-      if !api.request_fields.is_empty() {
-        file.write_all(b"    .json(&request_fields)\n")?;
-      }
-    }
-    _ => {}
-  }
-  file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
-  file.write_all(b"    .send()\n")?;
-  file.write_all(b"    .await\n")?;
-
-  file.write_all(b"}\n")?;
-  file.write_all(b"\n")?;
-
-  Ok(())
-}
-
-fn write_wrapper(
-  http_verb: &HttpVerb,
-  api: &TemplateUri,
-  api_section: &str,
-  mut file: &fs::File,
-) -> Result<(), Box<dyn std::error::Error>> {
-  let api_method_name = str::replace(
-    &api
-      .template
-      .trim_start_matches('/')
-      .trim_end_matches('/')
-      .replace("{", "")
-      .replace("}", ""),
-    "/",
-    "_",
-  );
-
-  let structure_name = &api
-    .template
-    .trim_start_matches('/')
-    .trim_end_matches('/')
-    .replace("{", "")
-    .replace("}", "")
-    .replace("/", "_")
-    .to_ascii_uppercase();
-
-  file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
-
-  file.write_all(b"pub async fn ")?;
-  file.write_all(("wrapper_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
-  file.write_all(api_method_name.as_bytes())?;
-  file.write_all(b"(\n")?;
-
-  file.write_all(b"  client: &reqwest::Client,\n")?;
-  file.write_all(b"  client_configuration: &client::ClientConfiguration,\n")?;
-  file.write_all(b"  refresh_token: &mut String,\n")?;
-  if !api.parameters.is_empty() {
-    if api.template == "/hot" {
-      println!("Parameters are: {:?}", api.parameters);
-    }
-    file.write_all(b"  parameters: &HashMap<String, String>,\n")?;
-  }
-
-  if !api.request_fields.is_empty() {
-    file.write_all(("  request_fields: ".to_string() + structure_name + ",\n").as_bytes())?
-  }
-  file.write_all(b") -> Result<serde_json::Value, reqwest::Error> {\n")?;
-
-  file.write_all(b"  utils::execute_with_refresh(\n")?;
-  file.write_all(b"    &client,\n")?;
-  file.write_all(b"    client_configuration,\n")?;
-  file.write_all(b"    refresh_token,\n")?;
-  if api.parameters.is_empty() {
-    file.write_all(b"    &HashMap::new(),\n")?;
-  } else {
-    file.write_all(b"    parameters,\n")?;
-  }
-  file.write_all(b"    &HashMap::new(),\n")?;
-  file.write_all(("    ".to_string() + api_section + "::").as_bytes())?;
-  file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
-  file.write_all(api_method_name.as_bytes())?;
-  file.write_all(b",\n")?;
-  file.write_all(b"  )\n")?;
-  file.write_all(b"  .await\n")?;
-
-  file.write_all(b"}\n")?;
-  file.write_all(b"\n")?;
-
-  Ok(())
-}
-
-fn write_request_model_file(
-  http_verb: &HttpVerb,
-  api: &TemplateUri,
-  mut file: &fs::File,
-) -> Result<(), Box<dyn std::error::Error>> {
-  let structure_name = &api
-    .template
-    .trim_start_matches('/')
-    .trim_end_matches('/')
-    .replace("{", "")
-    .replace("}", "")
-    .replace("/", "_")
-    .to_ascii_uppercase();
-
-  file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
-  file.write_all(("pub struct ".to_string() + structure_name + " {\n").as_bytes())?;
-  for field in api.request_fields.clone() {
-    if !field.1.is_empty() {
-      file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
-    }
-
-    file.write_all(("  ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
-  }
-  file.write_all(b"}")?;
-
-  Ok(())
-}
-
 fn word_before_underscore(s: &str) -> &str {
   let bytes = s.as_bytes();
 
@@ -438,9 +223,8 @@ fn word_before_underscore(s: &str) -> &str {
  */
 fn uri_prototype_into_concrete(
   prototype: &str,
-  api_detail: ElementRef,
   request_fields: HashMap<String, String>,
-) -> Vec<TemplateUri> {
+) -> Vec<template_uri::TemplateUri> {
   let uri_variant_section = Regex::new(r"\[(.*)\]").unwrap();
   let uri_parameter = Regex::new(r"(\{\{(\w+)\}\})").unwrap();
 
@@ -453,7 +237,7 @@ fn uri_prototype_into_concrete(
     }
 
     // Assume there's a single section for now ([/r/subreddit])
-    let uri_without_section = TemplateUri {
+    let uri_without_section = template_uri::TemplateUri {
       template: uri_without_section,
       parameters: uri_without_section_parameters,
       request_fields: request_fields.clone(),
@@ -465,7 +249,7 @@ fn uri_prototype_into_concrete(
       uri_with_section_parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
     }
 
-    let uri_with_section = TemplateUri {
+    let uri_with_section = template_uri::TemplateUri {
       template: uri_with_section,
       parameters: uri_with_section_parameters,
       request_fields: request_fields.clone(),
@@ -478,7 +262,7 @@ fn uri_prototype_into_concrete(
       parameters.insert(parameter_match[1].to_string(), parameter_match[2].to_string());
     }
 
-    vec![TemplateUri {
+    vec![template_uri::TemplateUri {
       template: uri_variant_section.replace_all(prototype, "$1").to_string(),
       parameters: parameters,
       request_fields: request_fields.clone(),
