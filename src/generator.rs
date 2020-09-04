@@ -1,11 +1,46 @@
 use crate::http_verb::HttpVerb;
 use crate::template_uri;
 
+use handlebars::Handlebars;
+use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
+use std::str;
 
-pub fn write_api(
+pub fn write_get_api(api: &template_uri::TemplateUri, mut file: &fs::File) -> Result<(), Box<dyn std::error::Error>> {
+  let api_method_name = str::replace(
+    &api
+      .template
+      .trim_start_matches('/')
+      .trim_end_matches('/')
+      .replace("{", "")
+      .replace("}", ""),
+    "/",
+    "_",
+  );
+
+  let mut handlebars = Handlebars::new();
+  handlebars.set_strict_mode(true);
+
+  let mut parameters: HashMap<String, String> = HashMap::new();
+  parameters.insert("api_path".to_string(), api.template.clone());
+  parameters.insert("api_name".to_string(), api_method_name);
+
+  if !api.parameters.is_empty() {
+    parameters.insert("parameters".to_string(), "true".to_string());
+  }
+
+  let bytes = include_bytes!("handlebars/http_get.handlebars");
+  let handlebars_template = str::from_utf8(bytes).unwrap();
+  let handlebars_template = handlebars.render_template(handlebars_template, &parameters).unwrap();
+
+  file.write_all(handlebars_template.as_bytes()).unwrap();
+
+  Ok(())
+}
+
+pub fn write_post_api(
   http_verb: &HttpVerb,
   api: &template_uri::TemplateUri,
   mut file: &fs::File,
@@ -75,8 +110,13 @@ pub fn write_api(
         file.write_all(b"    .json(&request_fields)\n")?;
       }
     }
+    HttpVerb::GET => {
+      // file.write_all("  utils::execute_get_api("")
+    }
     _ => {}
   }
+
+  // utils::execute_get_api("/api/v1/me", client, refresh_token).await
   file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
   file.write_all(b"    .send()\n")?;
   file.write_all(b"    .await\n")?;

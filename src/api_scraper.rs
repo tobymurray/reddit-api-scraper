@@ -63,11 +63,11 @@ pub async fn scrape(html: &str) -> Result<(), Box<dyn std::error::Error>> {
       for uri in uris_as_strings {
         match http_verb {
           HttpVerb::GET => {
-            generator::write_api(&http_verb, &uri, &execution_file)?;
+            generator::write_get_api(&uri, &execution_file)?;
             generator::write_wrapper(&http_verb, &uri, &api_section_header, &wrapper_file)?;
           }
           HttpVerb::POST => {
-            generator::write_api(&http_verb, &uri, &execution_file)?;
+            generator::write_post_api(&http_verb, &uri, &execution_file)?;
             generator::write_wrapper(&http_verb, &uri, &filename, &wrapper_file)?;
             generator::write_request_model_file(&uri, &request_model_file)?;
           }

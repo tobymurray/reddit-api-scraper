@@ -1,0 +1,26 @@
+// API is: '{{api_path}}'
+pub async fn execute_get_{{api_name}}(
+  client: &reqwest::Client,
+  refresh_token: String,
+{{~#if parameters}}
+  parameters: &HashMap<String, String>,
+{{~else}}
+  _parameters: &HashMap<String, String>,
+{{~/if}}
+  _request_fields: &HashMap<String, String>,
+) -> std::result::Result<reqwest::Response, reqwest::Error> {
+{{~#if parameters}}
+  let mut handlebars = Handlebars::new();
+  handlebars.set_strict_mode(true);
+{{~/if}}
+  client
+{{~#if parameters}}
+    .get(&("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap()))
+{{~else}}
+    .get("https://oauth.reddit.com{{api_path}}")
+{{~/if}}
+    .bearer_auth(&refresh_token)
+    .send()
+    .await
+}
+
