@@ -184,8 +184,16 @@ pub fn write_wrapper(
   } else {
     file.write_all(b"    parameters,\n")?;
   }
-  file.write_all(b"    &HashMap::new(),\n")?;
-  file.write_all(("    ".to_string() + api_section + "::").as_bytes())?;
+  match http_verb {
+    HttpVerb::POST => {
+      file.write_all(b"    &serde_json::to_value(request_fields).unwrap(),\n")?;
+    }
+    HttpVerb::GET => {
+      file.write_all(b"    &serde_json::from_str(\"\").unwrap(),\n")?;
+    }
+    _ => println!("{} isn't handled", http_verb),
+  }
+  file.write_all(("    ".to_string() + api_section + "_execution::").as_bytes())?;
   file.write_all(("execute_".to_string() + &http_verb.to_string().to_lowercase() + "_").as_bytes())?;
   file.write_all(api_method_name.as_bytes())?;
   file.write_all(b",\n")?;

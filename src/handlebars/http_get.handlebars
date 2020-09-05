@@ -7,7 +7,7 @@ pub async fn execute_get_{{api_name}}(
 {{~else}}
   _parameters: &HashMap<String, String>,
 {{~/if}}
-  _request_fields: &HashMap<String, String>,
+  _request_fields: &serde_json::Value,
 ) -> std::result::Result<reqwest::Response, reqwest::Error> {
 {{~#if parameters}}
   let mut handlebars = Handlebars::new();
