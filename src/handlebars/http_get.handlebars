@@ -13,14 +13,10 @@ pub async fn execute_get_{{api_name}}(
   let mut handlebars = Handlebars::new();
   handlebars.set_strict_mode(true);
 {{~/if}}
-  client
-{{~#if parameters}}
-    .get(&("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap()))
-{{~else}}
-    .get("https://oauth.reddit.com{{api_path}}")
+  let resolved_api_path = 
+{{~#if parameters}} &("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap());
+{{~else}} "https://oauth.reddit.com{{api_path}}";
 {{~/if}}
-    .bearer_auth(&refresh_token)
-    .send()
-    .await
+  utils::execute_get_api(resolved_api_path, client, refresh_token).await
 }
 
