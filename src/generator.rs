@@ -212,15 +212,28 @@ pub fn write_request_model_file(
     .to_ascii_uppercase();
 
   file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
+  file.write_all(b"#[derive(Serialize)]\n")?;
   file.write_all(("pub struct ".to_string() + structure_name + " {\n").as_bytes())?;
   for field in api.request_fields.clone() {
     if !field.1.is_empty() {
       file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
     }
 
-    file.write_all(("  ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
+    match field.0.as_str() {
+      "uh / X-Modhash header" => {
+        // The preference is for this value to be in the X-Modhash header
+        file.write_all(("  uh: String,\n\n").as_bytes())?;
+      }
+      "g-recaptcha-response" => {
+        file.write_all(("  #[serde(rename = \"g-recaptcha-response\")]\n\n").as_bytes())?;
+        file.write_all(("  g_recaptcha_response: String,\n\n").as_bytes())?;
+      }
+      _ => {
+        file.write_all(("  ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
+      }
+    }
   }
-  file.write_all(b"}")?;
+  file.write_all(b"}\n\n")?;
 
   Ok(())
 }
