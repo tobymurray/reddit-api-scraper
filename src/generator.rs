@@ -2,6 +2,7 @@ use crate::http_verb::HttpVerb;
 use crate::template_uri;
 
 use handlebars::Handlebars;
+use inflector::Inflector;
 use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
@@ -71,9 +72,9 @@ pub fn write_post_api(
   }
 
   if api.request_fields.is_empty() {
-    file.write_all(b"  _request_fields: &HashMap<String, String>,\n")?;
+    file.write_all(b"  _request_fields: &serde_json::Value,\n")?;
   } else {
-    file.write_all(b"  request_fields: &HashMap<String, String>,\n")?;
+    file.write_all(b"  request_fields: &serde_json::Value,\n")?;
   }
 
   file.write_all(b") -> std::result::Result<reqwest::Response, reqwest::Error> {\n")?;
@@ -189,7 +190,7 @@ pub fn write_wrapper(
       file.write_all(b"    &serde_json::to_value(request_fields).unwrap(),\n")?;
     }
     HttpVerb::GET => {
-      file.write_all(b"    &serde_json::from_str(\"\").unwrap(),\n")?;
+      file.write_all(b"    &serde_json::from_str(\"{}\").unwrap(),\n")?;
     }
     _ => println!("{} isn't handled", http_verb),
   }
@@ -217,7 +218,7 @@ pub fn write_request_model_file(
     .replace("{", "")
     .replace("}", "")
     .replace("/", "_")
-    .to_ascii_uppercase();
+    .to_class_case();
 
   file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
   file.write_all(b"#[derive(Serialize)]\n")?;
@@ -271,6 +272,8 @@ pub async fn create_wrapper_file(filename: &str) -> std::io::Result<fs::File> {
 pub async fn create_request_model_file(filename: &str) -> std::io::Result<fs::File> {
   let path = &("./target/output/request_models/".to_string() + filename + ".rs");
   let path = Path::new(path);
-  let file = fs::File::create(path)?;
+  let mut file = fs::File::create(path)?;
+
+  file.write_all(("use serde::Serialize;\n").as_bytes())?;
   Ok(file)
 }
