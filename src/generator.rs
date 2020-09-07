@@ -266,7 +266,7 @@ pub fn write_request_model_file(
     .to_class_case();
 
   file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
-  file.write_all(b"#[derive(Serialize)]\n")?;
+  file.write_all(b"#[derive(Default, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\n")?;
   file.write_all(("pub struct ".to_string() + structure_name + " {\n").as_bytes())?;
 
   for field in api.request_fields.clone() {
@@ -279,13 +279,13 @@ pub fn write_request_model_file(
           file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
         }
         file.write_all(("  #[serde(rename = \"g-recaptcha-response\")]\n\n").as_bytes())?;
-        file.write_all(("  g_recaptcha_response: String,\n\n").as_bytes())?;
+        file.write_all(("  pub g_recaptcha_response: String,\n\n").as_bytes())?;
       }
       _ => {
         if !field.1.is_empty() {
           file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
         }
-        file.write_all(("  ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
+        file.write_all(("  pub ".to_string() + &field.0 + ": String,\n\n").as_bytes())?;
       }
     }
   }
