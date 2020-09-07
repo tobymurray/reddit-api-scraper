@@ -1,0 +1,31 @@
+// API is: '{{api_path}}'
+pub async fn wrapper_get_{{api_name}}(
+  client: &reqwest::Client,
+  client_configuration: &client::ClientConfiguration,
+  refresh_token: &mut String,
+{{~#if uri_parameters}}
+  uri_parameters: &HashMap<String, String>,
+{{~/if}}
+{{~#if query_parameters}}
+  query_parameters: &serde_json::Value,
+{{~/if}}
+) -> Result<serde_json::Value, reqwest::Error> {
+  utils::execute_with_refresh(
+    &client,
+    client_configuration,
+    refresh_token,
+{{~#if uri_parameters}}
+    uri_parameters,
+{{~else}}
+    &HashMap::new(),
+{{~/if}}
+{{~#if query_parameters}}
+    query_parameters,
+{{~else}}
+    &serde_json::from_str("{}").unwrap(),
+{{~/if}}
+    {{api_section}}_execution::execute_get_{{api_name}},
+  )
+  .await
+}
+

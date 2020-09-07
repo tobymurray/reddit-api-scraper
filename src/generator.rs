@@ -128,6 +128,47 @@ pub fn write_post_api(
   Ok(())
 }
 
+pub fn write_get_wrapper(
+  api: &template_uri::TemplateUri,
+  api_section: &str,
+  mut file: &fs::File,
+) -> Result<(), Box<dyn std::error::Error>> {
+  let api_method_name = str::replace(
+    &api
+      .template
+      .trim_start_matches('/')
+      .trim_end_matches('/')
+      .replace("{", "")
+      .replace("}", ""),
+    "/",
+    "_",
+  );
+
+  let mut handlebars = Handlebars::new();
+  handlebars.set_strict_mode(true);
+
+  let mut parameters: HashMap<String, String> = HashMap::new();
+  parameters.insert("api_path".to_string(), api.template.clone());
+  parameters.insert("api_name".to_string(), api_method_name);
+  parameters.insert("api_section".to_string(), api_section.to_string());
+
+  if !api.parameters.is_empty() {
+    parameters.insert("uri_parameters".to_string(), "true".to_string());
+  }
+
+  if !api.request_fields.is_empty() {
+    parameters.insert("query_parameters".to_string(), "true".to_string());
+  }
+
+  let bytes = include_bytes!("handlebars/http_get_wrapper.handlebars");
+  let handlebars_template = str::from_utf8(bytes).unwrap();
+  let handlebars_template = handlebars.render_template(handlebars_template, &parameters).unwrap();
+
+  file.write_all(handlebars_template.as_bytes()).unwrap();
+
+  Ok(())
+}
+
 pub fn write_wrapper(
   http_verb: &HttpVerb,
   api: &template_uri::TemplateUri,
@@ -280,6 +321,6 @@ pub async fn create_request_model_file(filename: &str) -> std::io::Result<fs::Fi
   let path = Path::new(path);
   let mut file = fs::File::create(path)?;
 
-  file.write_all(("use serde::Serialize;\n").as_bytes())?;
+  file.write_all(("use serde::Serialize;\n\n").as_bytes())?;
   Ok(file)
 }
