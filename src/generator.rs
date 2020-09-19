@@ -64,7 +64,7 @@ pub fn write_post_api(
   file.write_all(b"(\n")?;
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
-  file.write_all(b"  refresh_token: String,\n")?;
+  file.write_all(b"  access_token: String,\n")?;
   if api.parameters.is_empty() {
     file.write_all(b"  _parameters: &HashMap<String, String>,\n")?;
   } else {
@@ -117,8 +117,8 @@ pub fn write_post_api(
     _ => {}
   }
 
-  // utils::execute_get_api("/api/v1/me", client, refresh_token).await
-  file.write_all(b"    .bearer_auth(&refresh_token)\n")?;
+  // utils::execute_get_api("/api/v1/me", client, access_token).await
+  file.write_all(b"    .bearer_auth(&access_token)\n")?;
   file.write_all(b"    .send()\n")?;
   file.write_all(b"    .await\n")?;
 
@@ -204,7 +204,7 @@ pub fn write_wrapper(
 
   file.write_all(b"  client: &reqwest::Client,\n")?;
   file.write_all(b"  client_configuration: &client::ClientConfiguration,\n")?;
-  file.write_all(b"  refresh_token: &mut String,\n")?;
+  file.write_all(b"  access_token: &mut String,\n")?;
   if !api.parameters.is_empty() {
     if api.template == "/hot" {
       println!("Parameters are: {:?}", api.parameters);
@@ -220,7 +220,7 @@ pub fn write_wrapper(
   file.write_all(b"  utils::execute_with_refresh(\n")?;
   file.write_all(b"    &client,\n")?;
   file.write_all(b"    client_configuration,\n")?;
-  file.write_all(b"    refresh_token,\n")?;
+  file.write_all(b"    access_token,\n")?;
   if api.parameters.is_empty() {
     file.write_all(b"    &HashMap::new(),\n")?;
   } else {
