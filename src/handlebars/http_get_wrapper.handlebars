@@ -2,7 +2,7 @@
 pub async fn wrapper_get_{{api_name}}(
   client: &reqwest::Client,
   client_configuration: &client::ClientConfiguration,
-  refresh_token: &mut String,
+  access_token: &mut String,
 {{~#if uri_parameters}}
   uri_parameters: &HashMap<String, String>,
 {{~/if}}
@@ -13,7 +13,7 @@ pub async fn wrapper_get_{{api_name}}(
   utils::execute_with_refresh(
     &client,
     client_configuration,
-    refresh_token,
+    access_token,
 {{~#if uri_parameters}}
     uri_parameters,
 {{~else}}

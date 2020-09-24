@@ -1,7 +1,7 @@
 // API is: '{{api_path}}'
 pub async fn execute_get_{{api_name}}(
   client: &reqwest::Client,
-  refresh_token: String,
+  access_token: String,
 {{~#if parameters}}
   parameters: &HashMap<String, String>,
 {{~else}}
@@ -17,6 +17,6 @@ pub async fn execute_get_{{api_name}}(
 {{~#if parameters}} &("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap());
 {{~else}} "https://oauth.reddit.com{{api_path}}";
 {{~/if}}
-  utils::execute_get_api(resolved_api_path, client, refresh_token).await
+  utils::execute_get_api(resolved_api_path, client, access_token).await
 }
 
