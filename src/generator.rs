@@ -193,7 +193,7 @@ pub fn write_wrapper(
     .replace("{", "")
     .replace("}", "")
     .replace("/", "_")
-    .to_ascii_uppercase();
+    .to_class_case();
 
   file.write_all(("// API is: '".to_string() + &api.template + "'\n").as_bytes())?;
 
