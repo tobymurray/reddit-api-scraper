@@ -281,6 +281,20 @@ pub fn write_request_model_file(
         file.write_all(("  #[serde(rename = \"g-recaptcha-response\")]\n\n").as_bytes())?;
         file.write_all(("  pub g_recaptcha_response: String,\n\n").as_bytes())?;
       }
+      "type" => {
+        if !field.1.is_empty() {
+          file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
+        }
+        file.write_all(("  #[serde(rename = \"type\")]\n").as_bytes())?;
+        file.write_all(("  pub r#type: String,\n\n").as_bytes())?;
+      }
+      "('user',)" => {
+        if !field.1.is_empty() {
+          file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
+        }
+        file.write_all(("  // This isn't right, it's supposed to be a username as the JSON property\n").as_bytes())?;
+        file.write_all(("  pub user: String,\n\n").as_bytes())?;
+      }
       _ => {
         if !field.1.is_empty() {
           file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
