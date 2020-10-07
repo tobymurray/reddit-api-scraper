@@ -32,6 +32,10 @@ pub fn write_get_api(api: &template_uri::TemplateUri, mut file: &fs::File) -> Re
     parameters.insert("parameters".to_string(), "true".to_string());
   }
 
+  if !api.request_fields.is_empty() {
+    parameters.insert("request_fields".to_string(), "true".to_string());
+  }
+
   let bytes = include_bytes!("handlebars/http_get.handlebars");
   let handlebars_template = str::from_utf8(bytes).unwrap();
   let handlebars_template = handlebars.render_template(handlebars_template, &parameters).unwrap();
@@ -319,7 +323,12 @@ pub async fn generate() -> Result<(), Box<dyn std::error::Error>> {
 pub async fn create_execution_file(filename: &str) -> std::io::Result<fs::File> {
   let path = &("./target/output/execution/".to_string() + filename + ".rs");
   let path = Path::new(path);
-  let file = fs::File::create(path)?;
+  let mut file = fs::File::create(path)?;
+
+  file.write_all(("use crate::api::utils;\n").as_bytes())?;
+  file.write_all(("use std::collections::HashMap;\n").as_bytes())?;
+  file.write_all(("\n").as_bytes())?;
+
   Ok(file)
 }
 

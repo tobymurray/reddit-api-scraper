@@ -7,16 +7,33 @@ pub async fn execute_get_{{api_name}}(
 {{~else}}
   _parameters: &HashMap<String, String>,
 {{~/if}}
+{{~#if request_fields}}
+  request_fields: &serde_json::Value,
+{{~else}}
   _request_fields: &serde_json::Value,
+{{~/if}}
 ) -> std::result::Result<reqwest::Response, reqwest::Error> {
 {{~#if parameters}}
   let mut handlebars = Handlebars::new();
   handlebars.set_strict_mode(true);
 {{~/if}}
-  let resolved_api_path = 
-{{~#if parameters}} &("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap());
-{{~else}} "https://oauth.reddit.com{{api_path}}";
+  let mut resolved_api_path = "https://oauth.reddit.com".to_string();
+{{#if parameters}}  resolved_api_path.push_str(&handlebars.render_template("{{api_path}}", &parameters).unwrap());
+{{~else}}  resolved_api_path.push_str("{{api_path}}");
 {{~/if}}
-  utils::execute_get_api(resolved_api_path, client, access_token).await
+{{#if request_fields}}
+  for request_field in request_fields.as_object().unwrap() {
+    if request_field.1.is_null() {
+      continue;
+    }
+
+    resolved_api_path.push_str(request_field.0);
+    resolved_api_path.push_str("=");
+    resolved_api_path.push_str(request_field.1.as_str().unwrap());
+    resolved_api_path.push_str("&");
+  }
+
+{{~/if}}
+  utils::execute_get_api(&resolved_api_path, client, access_token).await
 }
 
