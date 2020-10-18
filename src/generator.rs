@@ -292,6 +292,13 @@ pub fn write_request_model_file(
         file.write_all(("  #[serde(rename = \"type\")]\n").as_bytes())?;
         file.write_all(("  pub r#type: String,\n\n").as_bytes())?;
       }
+      "mod" => {
+        if !field.1.is_empty() {
+          file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;
+        }
+        file.write_all(("  #[serde(rename = \"mod\")]\n").as_bytes())?;
+        file.write_all(("  pub r#mod: String,\n\n").as_bytes())?;
+      }
       "('user',)" => {
         if !field.1.is_empty() {
           file.write_all(("  // ".to_string() + &field.1 + "\n").as_bytes())?;

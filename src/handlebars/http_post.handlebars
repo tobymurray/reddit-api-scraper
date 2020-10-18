@@ -1,0 +1,48 @@
+// API is: '{{api_path}}'
+pub async fn execute_post_{{api_name}}(
+  client: &reqwest::Client,
+  refresh_token: String,
+{{~#if parameters}}
+  parameters: &HashMap<String, String>,
+{{else}}
+  _parameters: &HashMap<String, String>,
+{{~/if}}
+{{~#if request_fields}}
+  request_fields: &HashMap<String, String>,
+{{else}}
+  _request_fields: &HashMap<String, String>,
+{{~/if}}
+) -> std::result::Result<reqwest::Response, reqwest::Error> {
+{{~#if parameters}}
+  let mut handlebars = Handlebars::new();
+  handlebars.set_strict_mode(true);
+{{~/if}}
+  client
+{{~#if parameters}}
+    .get((&("https://oauth.reddit.com".to_string() + &handlebars.render_template("{{api_path}}", &parameters).unwrap())))
+{{else}}
+    .get("https://oauth.reddit.com{{api_path}}")
+{{~/if}}
+    .bearer_auth(&refresh_token)
+    .send()
+    .await
+}
+
+
+
+
+
+// API is: '/api/submit'
+pub async fn execute_post_api_submit(
+  client: &reqwest::Client,
+  refresh_token: String,
+  _parameters: &HashMap<String, String>,
+  request_fields: &HashMap<String, String>,
+) -> std::result::Result<reqwest::Response, reqwest::Error> {
+  client
+    .post("https://oauth.reddit.com/api/submit")
+    .json(&request_fields)
+    .bearer_auth(&refresh_token)
+    .send()
+    .await
+}
