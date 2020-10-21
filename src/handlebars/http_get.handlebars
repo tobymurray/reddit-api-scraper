@@ -22,6 +22,7 @@ pub async fn execute_get_{{api_name}}(
 {{~else}}  resolved_api_path.push_str("{{api_path}}");
 {{~/if}}
 {{#if request_fields}}
+  resolved_api_path.push_str("?");
   for request_field in request_fields.as_object().unwrap() {
     if request_field.1.is_null() {
       continue;
