@@ -109,11 +109,11 @@ fn get_uri_from_api_details(
 
   let mut variants: Vec<template_uri::TemplateUri> = Vec::new();
   for variant in uri_variants {
-    num_variants = num_variants + 1;
+    num_variants += 1;
     variants.extend(uri_prototype_into_concrete(
       &collect_children_as_string(variant)
         .unwrap()
-        .trim_start_matches("→")
+        .trim_start_matches('→')
         .trim()
         .to_string(),
       request_fields.clone(),
@@ -191,7 +191,7 @@ fn collect_children_as_string(parent: ElementRef) -> Option<String> {
     uri_as_string.push_str(&uri_part);
   }
 
-  if uri_as_string.len() == 0 {
+  if uri_as_string.is_empty() {
     None
   } else {
     Some(uri_as_string)
@@ -266,7 +266,7 @@ fn uri_prototype_into_concrete(
 
     vec![template_uri::TemplateUri {
       template: uri_variant_section.replace_all(prototype, "$1").to_string(),
-      parameters: parameters,
+      parameters,
       request_fields: request_fields.clone(),
     }]
   }
